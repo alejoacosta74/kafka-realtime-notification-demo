@@ -2,12 +2,11 @@ package consumer
 
 import (
 	"context"
-	"net/http"
 	"sync"
 	"time"
 
 	"kafka-notify/pkg/models"
-	"kafka-notify/pkg/utils"
+	"kafka-notify/pkg/server"
 
 	"github.com/alejoacosta74/go-logger"
 
@@ -66,45 +65,24 @@ func Run() {
 	// Ensure context is cancelled when main exits
 	defer cancel()
 
-	// Configure Gin to run in production mode
-	gin.SetMode(gin.ReleaseMode)
-	// Create default Gin router with middleware
-	router := gin.Default()
-	// Set up GET endpoint for retrieving user notifications
-	router.GET("/notifications/:userID", func(ctx *gin.Context) {
+	// create and start http server to expose the consumer endpoint
+	httpServer := server.NewServer(ConsumerPort)
+	httpServer.Get("/notifications/:userID", func(ctx *gin.Context) {
 		handleNotifications(ctx, store)
 	})
-
-	// create http server with Gin router
-	httpServer := &http.Server{
-		Addr:    ConsumerPort,
-		Handler: router,
-	}
-
-	// start http server in a separate goroutine
-	go func() {
-		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			logger.Fatal("failed to run the server", "error", err)
-		}
-	}()
+	httpServer.ListenAndServe()
 
 	logger.Infof("Kafka CONSUMER (Group: %s) 👥📥 started at http://localhost:%v", ConsumerGroup, ConsumerPort)
 
-	interruptCh := utils.NewInterruptSignalChannel()
+	interruptCh := server.NewInterruptSignalChannel()
 	<-interruptCh
 
 	// cancel the context to stop the consumer
 	cancel()
 
 	ctxWithTimeout, _ := context.WithTimeout(ctx, 5*time.Second)
-	// gracefully shutdown the server
-	if err := httpServer.Shutdown(ctxWithTimeout); err != nil {
-		logger.Error("server forced to shutdown", "error", err)
-	}
+	httpServer.Shutdown(ctxWithTimeout)
 
-	logger.Info("server exiting")
-
-	// Wait for Kafka consumer to finish (optional, depending on your needs)
 	<-ctx.Done()
 	logger.Info("Kafka consumer finished")
 }

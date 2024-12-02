@@ -25,45 +25,57 @@ This ensures efficient message routing and maintains message ordering per user w
 ```bash
 docker compose up
 ```
+## Compile the project
+
+```bash
+go build -o kafka-notify bin/kafka-notify
+```
 
 ## Run the producer API
 
 - This starts a simple API that allows you to send notifications to the kafka topic at the `/send` endpoint
+- On a new terminal run:
 
 ```bash
-go run cmd/producer/*.go
+./kafka-notify producer
 ```
 
 ### Run the consumer API
 
 - This starts a simple API that allows you to retrieve notifications from the kafka topic at the `/notifications/:userID` endpoint
-
+- On a new terminal run:
 ```bash
-go run cmd/consumer/*.go
+./kafka-notify consumer
 ```
 
 ### Send notifications (publish messages to kafka topic)
 
+- On a new terminal run:
+
 **User 1 (Micho) receives a notification from User 2 (Tito):**
 
 ```bash
- curl -X POST http://localhost:8080/send \
--d "fromID=2&toID=1&message=Tito started following you."
+ curl -X POST http://localhost:8080/send -d "fromID=2&toID=1&message=Tito started following you."
 ```
 
 **User 2 (Tito) receives a notification from User 1 (Micho):**
 
-```go
-curl -X POST http://localhost:8080/send \
--d "fromID=1&toID=2&message=Micho mentioned you in a comment: 'Great seeing you yesterday, @Tito!'"
+```bash
+curl -X POST http://localhost:8080/send -d "fromID=1&toID=2&message=Micho mentioned you in a comment: 'Great seeing you yesterday, @Tito!'"
 ```
 
 **User 1 (Micho) receives a notification from User 4 (Negro):**
 
-```go
-curl -X POST http://localhost:8080/send \
--d "fromID=4&toID=1&message=Negro liked your post: 'My weekend getaway!'"
+```bash
+curl -X POST http://localhost:8080/send -d "fromID=3&toID=1&message=Negro liked your post: 'My weekend asado!'"
 ```
+
+**User 1 (Micho) receives a notification from User 4 (Cabezon):**
+
+```bash
+curl -X POST http://localhost:8080/send -d "fromID=4&toID=1&message=Cabezon liked your post: 'My weekend asado!'"
+```
+
 
 ### Retrieve notifications (subscribe to kafka topic)
 

@@ -1,6 +1,7 @@
-package main
+package producer
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"kafka-notify/pkg/models"
@@ -10,6 +11,32 @@ import (
 	"github.com/alejoacosta74/go-logger"
 	"github.com/gin-gonic/gin"
 )
+
+// setupProducer initializes and configures a Kafka producer for synchronous message sending
+func setupProducer(ctx context.Context) (sarama.SyncProducer, error) {
+	// Create a new Kafka configuration with default settings
+	config := sarama.NewConfig()
+	// Enable producer acknowledgments so we can confirm messages were sent successfully
+	config.Producer.Return.Successes = true
+	// Create a new synchronous producer connected to our Kafka broker
+	producer, err := sarama.NewSyncProducer([]string{KafkaServerAddress}, config)
+	// If producer creation fails, wrap the error with additional context
+	if err != nil {
+		logger.Error("Failed to setup producer", "error", err)
+		return nil, fmt.Errorf("failed to setup producer: %w", err)
+	}
+	logger.Info("New kafka producer created")
+	// Return the successfully created producer
+
+	// Monitor context for shutting down the producer
+	go func() {
+		<-ctx.Done()
+		producer.Close()
+		logger.Warn("Kafka producer closed")
+	}()
+
+	return producer, nil
+}
 
 // sendKafkaProducerMessage sends a notification message to Kafka from one user to another
 func sendKafkaProducerMessage(producer sarama.SyncProducer,
@@ -33,8 +60,9 @@ func sendKafkaProducerMessage(producer sarama.SyncProducer,
 
 	// Create a notification object with the sender, recipient and message
 	notification := models.Notification{
-		From: fromUser,
-		To:   toUser, Message: message,
+		From:    fromUser,
+		To:      toUser,
+		Message: message,
 	}
 
 	// Convert the notification struct to JSON bytes
@@ -58,24 +86,6 @@ func sendKafkaProducerMessage(producer sarama.SyncProducer,
 		return fmt.Errorf("failed to send message to Kafka: %w", err)
 	}
 
-	logger.Info("Message sent to Kafka", "partition", partition, "offset", offset)
+	logger.Info("Message sent to Kafka", "partition: ", partition, "offset: ", offset)
 	return nil
-}
-
-// setupProducer initializes and configures a Kafka producer for synchronous message sending
-func setupProducer() (sarama.SyncProducer, error) {
-	// Create a new Kafka configuration with default settings
-	config := sarama.NewConfig()
-	// Enable producer acknowledgments so we can confirm messages were sent successfully
-	config.Producer.Return.Successes = true
-	// Create a new synchronous producer connected to our Kafka broker
-	producer, err := sarama.NewSyncProducer([]string{KafkaServerAddress}, config)
-	// If producer creation fails, wrap the error with additional context
-	if err != nil {
-		logger.Error("Failed to setup producer", "error", err)
-		return nil, fmt.Errorf("failed to setup producer: %w", err)
-	}
-	logger.Info("New kafka producer created")
-	// Return the successfully created producer
-	return producer, nil
 }
