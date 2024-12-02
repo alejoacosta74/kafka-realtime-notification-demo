@@ -1,22 +1,27 @@
-package main
+package consumer
 
 import (
 	"context"
-	"fmt"
-	"log"
+	"net/http"
 	"sync"
+	"time"
 
 	"kafka-notify/pkg/models"
+	"kafka-notify/pkg/utils"
+
+	"github.com/alejoacosta74/go-logger"
 
 	"github.com/gin-gonic/gin"
+	"github.com/spf13/viper"
 )
 
 const (
-	ConsumerGroup      = "notifications-group"
-	ConsumerTopic      = "notifications"
-	ConsumerPort       = ":8081"
-	KafkaServerAddress = "192.168.5.142:9092"
+	ConsumerGroup = "notifications-group"
+	ConsumerTopic = "notifications"
+	ConsumerPort  = ":8081"
 )
+
+var KafkaServerAddress string
 
 // UserNotifications is a custom type that maps user IDs to their slice of notifications
 // This allows efficient storage and retrieval of notifications per user
@@ -46,7 +51,9 @@ func (ns *NotificationStore) Get(userID string) []models.Notification {
 	return ns.data[userID] // Return user's notifications
 }
 
-func main() {
+func Run() {
+	KafkaServerAddress = viper.GetString("kafka-broker-address")
+
 	// Initialize notification store with empty map
 	store := &NotificationStore{
 		data: make(UserNotifications),
@@ -68,12 +75,36 @@ func main() {
 		handleNotifications(ctx, store)
 	})
 
-	// Log server startup with consumer group info
-	fmt.Printf("Kafka CONSUMER (Group: %s) 👥📥 "+
-		"started at http://localhost%s\n", ConsumerGroup, ConsumerPort)
-
-	// Start HTTP server, log any errors that occur
-	if err := router.Run(ConsumerPort); err != nil {
-		log.Printf("failed to run the server: %v", err)
+	// create http server with Gin router
+	httpServer := &http.Server{
+		Addr:    ConsumerPort,
+		Handler: router,
 	}
+
+	// start http server in a separate goroutine
+	go func() {
+		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			logger.Fatal("failed to run the server", "error", err)
+		}
+	}()
+
+	logger.Infof("Kafka CONSUMER (Group: %s) 👥📥 started at http://localhost:%v", ConsumerGroup, ConsumerPort)
+
+	interruptCh := utils.NewInterruptSignalChannel()
+	<-interruptCh
+
+	// cancel the context to stop the consumer
+	cancel()
+
+	ctxWithTimeout, _ := context.WithTimeout(ctx, 5*time.Second)
+	// gracefully shutdown the server
+	if err := httpServer.Shutdown(ctxWithTimeout); err != nil {
+		logger.Error("server forced to shutdown", "error", err)
+	}
+
+	logger.Info("server exiting")
+
+	// Wait for Kafka consumer to finish (optional, depending on your needs)
+	<-ctx.Done()
+	logger.Info("Kafka consumer finished")
 }

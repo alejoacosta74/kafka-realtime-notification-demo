@@ -1,4 +1,4 @@
-package main
+package consumer
 
 import (
 	"context"
@@ -99,18 +99,22 @@ func setupConsumerGroup(ctx context.Context, store *NotificationStore) {
 
 	// Run continuous processing loop
 	for {
-		// Consume messages from the topic
-		err = consumerGroup.Consume(ctx, []string{ConsumerTopic}, consumer)
-		if err != nil {
-			// Log any consumption errors
-			logger.Errorf("Error consuming topic: %v", err)
-			time.Sleep(time.Second)
-			continue
-		}
-		// Check if context was cancelled
-		if ctx.Err() != nil {
-			logger.Info("Context cancelled, stopping consumer")
+		select {
+		case <-ctx.Done():
+			logger.Warn("Context cancelled, stopping consumer")
 			return
+		default:
+			// Consume messages from the topic
+			if err := consumerGroup.Consume(ctx, []string{ConsumerTopic}, consumer); err != nil {
+				if ctx.Err() != nil {
+					// Context was cancelled while consuming
+					logger.Warn("Context cancelled while consuming, stopping consumer")
+					return
+				}
+				// Real consumption error occurred
+				logger.Errorf("Error consuming topic: %v", err)
+				time.Sleep(time.Second)
+			}
 		}
 	}
 }
